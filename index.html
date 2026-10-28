@@ -876,8 +876,7 @@ document.getElementById('mode').onchange = async () => { S = await api('/api/set
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem('localGame') || 'null'); } catch (e) {}
     S = await api(saved ? '/api/restore' : '/api/state', saved || undefined);
-    document.getElementById('subtitle').textContent =
-      `AI（NNUE ${S.nnue}＋αβ探索）はこのブラウザの中で動きます（1 スレッド、PC の速さで強さが変わります）`;
+    document.getElementById('subtitle').textContent = '';
   } else S = await api('/api/state');
   document.getElementById('think').value = String(S.think_ms / 1000);
   document.getElementById('mode').value = S.ai_sides.length === 2 ? 'watch' : S.ai_sides.length === 0 ? 'human' : String(1 - S.ai_sides[0]);
