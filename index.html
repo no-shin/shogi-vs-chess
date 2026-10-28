@@ -291,7 +291,7 @@ function reportResult() {
   if (sent.includes(gameId)) return;
   try { localStorage.setItem('reported', JSON.stringify([...sent, gameId].slice(-100))); } catch (e) {}
   fetch(RESULTS_URL, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
-    gid: gameId, result: S.status, reason: S.reason, human: 1 - S.ai_sides[0], think_ms: S.think_ms,
+    v: 2, gid: gameId, result: S.status - 1, reason: S.reason, human: 1 - S.ai_sides[0], think_ms: S.think_ms,
     plies: S.history.length, moves: S.history.join(' '), start: S.start, nnue: S.nnue})}).catch(() => {});
 }
 async function api(path, body) {
