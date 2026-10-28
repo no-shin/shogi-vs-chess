@@ -691,7 +691,8 @@ function stopTimer() {
 // evaluation of each position, keyed by the evaluating model (the best network, or the NNUE when it is the AI) + moves
 const evals = new Map();
 // evaluations are remembered in the browser (newest EVAL_STORE_MAX), so a reload does not compute them again
-const EVAL_STORE = 'evalCache', EVAL_STORE_MAX = 5000;
+const EVAL_STORE = 'evalCache2', EVAL_STORE_MAX = 5000;  // 2: 2026-10-29, lone legal moves were valued 0 before
+try { localStorage.removeItem('evalCache'); } catch (e) {}
 try { for (const [k, v] of JSON.parse(localStorage.getItem(EVAL_STORE) || '[]')) evals.set(k, v); } catch (e) {}
 let evalSaveTimer = null;
 function setEval(key, v) {

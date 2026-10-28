@@ -35,7 +35,7 @@ const ready = (async () => {
     ['w_make', 'number', ['number', 'number']], ['w_unmake', 'number', ['number']],
     ['w_status', 'number', ['number']], ['w_state', null, ['number', 'number', 'number', 'number']],
     ['w_move_str', 'string', ['number', 'number']], ['w_parse_move', 'number', ['number', 'string']],
-    ['w_mate', 'number', ['number', 'number']], ['w_search_time', 'number', ['number', 'number']],
+    ['w_mate', 'number', ['number', 'number', 'number']], ['w_search_time', 'number', ['number', 'number']],
     ['w_res_score', 'number', []], ['w_res_depth', 'number', []], ['w_res_nodes', 'number', []],
     ['w_multipv', 'number', ['number', 'number', 'number', 'number']],
     ['w_line_move', 'number', ['number']], ['w_line_score', 'number', ['number']],
@@ -140,10 +140,15 @@ function aiMove() {
   const t0 = performance.now();
   viewAt(G.history.length);
   const sign = posState(1).side === 0 ? 1 : -1;
-  let m = W.mate(MATE_PLY, MATE_NODES) >>> 0, info;
+  // the mate search gets at most a quarter of the thinking time (in an endgame full of checks its nodes cost a lot),
+  // the alpha-beta search the rest
+  let m = W.mate(MATE_PLY, MATE_NODES, Math.max(1, G.think_ms >> 2)) >>> 0, info;
   if (m) info = {engine: `NNUE ${NAME} + 詰み探索`, model: 'nnue-' + NAME, value: 1, mate: true, value_sente: sign};
   else {
-    m = W.search_time(G.think_ms, 0) >>> 0;
+    // a lone legal move is read only for its value (as the evaluation does), the rest for the whole time left
+    const lone = legal(1).length === 1;
+    m = W.search_time(lone ? Math.min(EVAL_MS, G.think_ms) : Math.max(1, G.think_ms - (performance.now() - t0)),
+                      lone ? 1 : 0) >>> 0;
     const v = scoreValue(W.res_score());
     info = {engine: `NNUE ${NAME} + αβ`, model: 'nnue-' + NAME, value: v, depth: W.res_depth(),
             sims: W.res_nodes(), value_sente: sign * v};
