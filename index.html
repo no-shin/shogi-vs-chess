@@ -198,6 +198,7 @@
         <button id="aimove">AIに1手指させる</button>
         <button id="editbtn">盤面編集</button>
       </div>
+      <div class="hint hidden" id="recnote"></div>
     </div>
     <div class="card">
       <h2>棋譜</h2>
@@ -271,10 +272,27 @@ function workerCall(path, body) {
   return new Promise(res => { workerWait.set(id, res); worker.postMessage({id, path, body}); });
 }
 // the game is kept in this browser, so a reload goes on with it
+// gameId: one per game (a new game or an edited starting position), kept with the saved game
+let gameId = null;
+function newGameId() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function saveLocalGame() {
   if (!S) return;
   try { localStorage.setItem('localGame', JSON.stringify({start: S.start, history: S.history, ai_sides: S.ai_sides,
-                                                           think_ms: S.think_ms})); } catch (e) {}
+                                                           think_ms: S.think_ms, id: gameId})); } catch (e) {}
+  reportResult();
+}
+// the result of a finished game between a player and the AI goes to the results Worker once
+// (tools/results_worker.js: Cloudflare Worker + D1; no name or e-mail, the browser does not have them)
+const RESULTS_URL = 'https://shogi-results.noshinn-aizu.workers.dev/result';
+function reportResult() {
+  if (!S || S.status === 0 || S.ai_sides.length !== 1 || !gameId) return;
+  let sent = [];
+  try { sent = JSON.parse(localStorage.getItem('reported') || '[]'); } catch (e) {}
+  if (sent.includes(gameId)) return;
+  try { localStorage.setItem('reported', JSON.stringify([...sent, gameId].slice(-100))); } catch (e) {}
+  fetch(RESULTS_URL, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+    gid: gameId, result: S.status, reason: S.reason, human: 1 - S.ai_sides[0], think_ms: S.think_ms,
+    plies: S.history.length, moves: S.history.join(' '), start: S.start, nnue: S.nnue})}).catch(() => {});
 }
 async function api(path, body) {
   if (LOCAL_ENGINE) {
@@ -286,6 +304,7 @@ async function api(path, body) {
       }
       throw new Error(j.error);
     }
+    if (path === '/api/new' || path === '/api/setpos') gameId = newGameId();
     if (j.board && j.view_ply === null) setTimeout(saveLocalGame, 0);  // after the caller has stored it in S
     return j;
   }
@@ -861,8 +880,12 @@ document.getElementById('mode').onchange = async () => { S = await api('/api/set
     document.getElementById('subtitle').textContent = 'AI（NNUE＋αβ探索）はこのブラウザの中で動きます。読み込み中…';
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem('localGame') || 'null'); } catch (e) {}
+    gameId = (saved && saved.id) || newGameId();
     S = await api(saved ? '/api/restore' : '/api/state', saved || undefined);
     document.getElementById('subtitle').textContent = '';
+    const note = document.getElementById('recnote');
+    note.textContent = 'AI との対局の結果（勝敗・棋譜）を記録しています（名前などは記録しません）';
+    note.classList.remove('hidden');
   } else S = await api('/api/state');
   document.getElementById('think').value = String(S.think_ms / 1000);
   document.getElementById('mode').value = S.ai_sides.length === 2 ? 'watch' : S.ai_sides.length === 0 ? 'human' : String(1 - S.ai_sides[0]);
