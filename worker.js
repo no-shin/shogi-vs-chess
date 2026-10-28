@@ -35,7 +35,7 @@ const ready = (async () => {
     ['w_make', 'number', ['number', 'number']], ['w_unmake', 'number', ['number']],
     ['w_status', 'number', ['number']], ['w_state', null, ['number', 'number', 'number', 'number']],
     ['w_move_str', 'string', ['number', 'number']], ['w_parse_move', 'number', ['number', 'string']],
-    ['w_mate', 'number', ['number', 'number']], ['w_search_time', 'number', ['number']],
+    ['w_mate', 'number', ['number', 'number']], ['w_search_time', 'number', ['number', 'number']],
     ['w_res_score', 'number', []], ['w_res_depth', 'number', []], ['w_res_nodes', 'number', []],
     ['w_multipv', 'number', ['number', 'number', 'number', 'number']],
     ['w_line_move', 'number', ['number']], ['w_line_score', 'number', ['number']],
@@ -143,7 +143,7 @@ function aiMove() {
   let m = W.mate(MATE_PLY, MATE_NODES) >>> 0, info;
   if (m) info = {engine: `NNUE ${NAME} + 詰み探索`, model: 'nnue-' + NAME, value: 1, mate: true, value_sente: sign};
   else {
-    m = W.search_time(G.think_ms) >>> 0;
+    m = W.search_time(G.think_ms, 0) >>> 0;
     const v = scoreValue(W.res_score());
     info = {engine: `NNUE ${NAME} + αβ`, model: 'nnue-' + NAME, value: v, depth: W.res_depth(),
             sims: W.res_nodes(), value_sente: sign * v};
@@ -169,7 +169,7 @@ function ponderStep() {
   if (!ponder || busy) return;
   if (ponder.key !== gameKey(G.history.length) || performance.now() > ponder.until) { ponder = null; return; }
   viewAt(G.history.length);
-  W.search_time(PONDER_SLICE_MS);
+  W.search_time(PONDER_SLICE_MS, 0);
   queuePonder();
 }
 
@@ -184,7 +184,7 @@ function evalAt(ply) {
   if (s !== ONGOING) r = {value: s === DRAW ? 0 : s === WIN0 ? 1 : -1, final: true};
   else {
     const side = posState(1).side;
-    W.search_time(EVAL_MS);
+    W.search_time(EVAL_MS, 1);
     const v = scoreValue(W.res_score());
     r = {value: Math.round((side === 0 ? v : -v) * 1e4) / 1e4, engine: `NNUE ${NAME}`, depth: W.res_depth()};
   }
