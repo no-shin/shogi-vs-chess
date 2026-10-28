@@ -114,8 +114,6 @@
   #moves .mv { cursor: pointer; border-radius: 3px; padding: 0 3px; }
   #moves .mv:hover { background: #efe5d2; }
   #moves .mv.cur { background: var(--accent); color: #fff; }
-  #moves .mv .q { color: var(--promo); font-weight: 700; margin-left: 2px; }
-  #moves .mv.cur .q { color: #ffd7d2; }
   .navrow { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
   .navrow button { padding: 2px 8px; font-size: 13px; }
   .navrow .lab { font-size: 12px; color: var(--muted); margin-left: 4px; }
@@ -206,7 +204,6 @@
         <span class="lab" id="navlab"></span>
       </div>
       <div id="moves"></div>
-      <div class="hint">手をクリック、グラフをクリック、←→キーでその局面を見返せます。？は評価値が大きく下がった手。</div>
     </div>
   </aside>
   <section class="graphcol">
@@ -322,16 +319,6 @@ async function gotoPly(ply) {
   if (req !== viewReq) return;  // a newer request is on its way
   viewPly = ply; V = v;
   render();
-}
-// questionable moves: the mover's evaluation drops by this much (shogi-style score) from before to after the move
-const Q_DROP = 600, QQ_DROP = 1200;
-function moveMark(i) {  // i: 1-based move number
-  const a = valueAt(i - 1), b = valueAt(i);
-  if (a === undefined || a === null || b === undefined || b === null) return '';
-  const side0 = ((S.side + S.history.length) % 2);  // side to move at the start
-  const mover = (side0 + i - 1) % 2;
-  const drop = (mover === 0 ? 1 : -1) * (valueToEval(a) - valueToEval(b));
-  return drop >= QQ_DROP ? '??' : drop >= Q_DROP ? '?' : '';
 }
 
 // network value (expected score in [-1, 1]) -> win rate -> shogi-style score (600 * logit, as NN shogi engines do)
@@ -515,8 +502,7 @@ function render() {
   renderMoves();
 }
 
-// kifu with the questionable-move marks: rebuilt on render, when evaluations arrive and when they are shown or hidden
-// (not from the analysis loop, which runs many times a second)
+// kifu: rebuilt on render and when evaluations arrive (not from the analysis loop, which runs many times a second)
 function renderMoves() {
   const mv = document.getElementById('moves');
   mv.innerHTML = '';
@@ -526,8 +512,6 @@ function renderMoves() {
     if (i >= labels.length) return d;
     d.className = 'mv' + (curPly() === i + 1 ? ' cur' : '');
     d.textContent = labels[i];
-    const q = showEval ? moveMark(i + 1) : '';
-    if (q) { const e = document.createElement('span'); e.className = 'q'; e.textContent = q; d.appendChild(e); }
     d.onclick = () => gotoPly(i + 1);
     return d;
   };
@@ -844,7 +828,6 @@ document.getElementById('evaltoggle').onclick = () => {
   if (!showEval) analyzing = false;  // the analysis panel is hidden with the evaluation
   try { localStorage.setItem('showEval', showEval ? '1' : '0'); } catch (e) {}
   renderInfo();
-  renderMoves();  // the marks in the kifu follow the setting too
 };
 document.getElementById('graph').onpointermove = ev => { graphHover = graphPly(ev); renderGraph(); };
 document.getElementById('graph').onpointerleave = () => { graphHover = null; renderGraph(); };
