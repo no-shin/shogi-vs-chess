@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>将棋対チェス AI</title>
+<style>
+  :root {
+    --bg: #f4efe6; --panel: #fffaf2; --ink: #2b2118; --muted: #7a6a58; --line: #6b4f2a;
+    --wood: #e8c27a; --wood2: #dcb066; --hl: rgba(60, 140, 255, .35); --last: rgba(255, 170, 40, .45);
+    --sel: rgba(40, 200, 120, .55); --check: rgba(230, 40, 40, .45); --accent: #2f6fb5; --promo: #c0271d;
+    --shogibar: #d9a441; --chessbar: #3a3a3a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; }
+  header { padding: 12px 16px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; margin: 0; }
+  header span { color: var(--muted); font-size: 13px; }
+  main { display: flex; gap: 16px; padding: 0 16px 24px; flex-wrap: wrap; align-items: flex-start; }
+  .boardwrap { display: flex; flex-direction: column; gap: 8px; }
+  .hand { min-height: 52px; background: var(--wood2); border: 2px solid var(--line); border-radius: 6px;
+    display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 8px; align-items: center; width: calc(9 * var(--cell) + 28px); }
+  .hand .who { font-size: 12px; color: #4a3720; margin-right: 6px; white-space: nowrap; }
+  .hand .hp { position: relative; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border-radius: 4px; }
+  .hand .hp.sel { background: var(--sel); }
+  .hand .hp .cnt { position: absolute; right: -2px; bottom: -4px; font-size: 12px; font-weight: bold; }
+  .boardrow { display: flex; }
+  .files { display: grid; grid-template-columns: repeat(9, var(--cell)); width: calc(9 * var(--cell)); margin-left: 2px;
+    font-size: 12px; color: var(--muted); text-align: center; }
+  .ranks { display: grid; grid-template-rows: repeat(9, var(--cell)); font-size: 12px; color: var(--muted);
+    align-items: center; padding-left: 6px; }
+  #board { --cell: 56px; display: grid; grid-template-columns: repeat(9, var(--cell)); grid-template-rows: repeat(9, var(--cell));
+    background: var(--wood); border: 2px solid var(--line); }
+  .boardwrap { --cell: 56px; }
+  .sq { border: 1px solid rgba(80, 55, 20, .55); position: relative; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; user-select: none; }
+  .sq.last { background: var(--last); }
+  .sq.sel { background: var(--sel); }
+  .sq.check { background: var(--check); }
+  .sq.dest::after { content: ""; position: absolute; width: 30%; height: 30%; border-radius: 50%; background: var(--hl); }
+  .sq.dest.cap::after { width: 86%; height: 86%; background: none; border: 4px solid var(--hl); }
+  .pc { display: flex; align-items: center; justify-content: center; line-height: 1; pointer-events: none; }
+  .pc.shogi.away { transform: rotate(180deg); }  /* shogi pieces facing the far side; chess glyphs use colour */
+  .pc.shogi { width: 82%; height: 88%; background: linear-gradient(#f9e7bf, #eccf92); color: #1d150d;
+    clip-path: polygon(50% 0, 86% 14%, 100% 100%, 0 100%, 14% 14%); font-size: calc(var(--cell) * .48); font-weight: 600;
+    padding-top: 12%; font-family: "Hiragino Mincho ProN", "Noto Serif JP", "Yu Mincho", serif; }
+  .pc.shogi.promo { color: var(--promo); }
+  .pc.chess { font-size: calc(var(--cell) * .78); }
+  .pc.chess.o0 { color: #fff; text-shadow: 0 0 1px #000, 0 0 1px #000, 0 0 2px #000; }
+  .pc.chess.o1 { color: #111; }
+  .pc.chess.promo { text-shadow: 0 0 3px var(--promo), 0 0 1px var(--promo); }
+  .hand .pc.shogi { font-size: 20px; width: 36px; height: 40px; }
+  .hand .pc.chess { font-size: 34px; }
+  aside { flex: 1; min-width: 280px; max-width: 460px; display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--panel); border: 1px solid #dccfb8; border-radius: 8px; padding: 12px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; }
+  label { font-size: 13px; display: block; margin: 6px 0 2px; color: var(--muted); }
+  select, button { font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 6px; border: 1px solid #b9a888; background: #fff; }
+  select { width: 100%; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  #status { font-size: 16px; font-weight: 600; min-height: 22px; }
+  #timer { display: none; margin-top: 6px; }
+  #timer.on { display: block; }
+  #timer .t { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
+  #timer .bar { height: 6px; background: #e6dccb; border-radius: 3px; overflow: hidden; margin-top: 3px; }
+  #timer .bar div { height: 100%; width: 0; background: var(--accent); }
+  input[type=number] { font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 6px; border: 1px solid #b9a888;
+    width: 110px; }
+  .unit { font-size: 13px; color: var(--muted); margin-left: 4px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 2px; min-height: 14px; }
+  #info { font-size: 12px; color: var(--muted); white-space: pre-wrap; min-height: 16px; }
+  button.small { font-size: 12px; padding: 3px 8px; margin-top: 6px; }
+  #analysis { font-size: 13px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  #analysis .head { font-size: 12px; color: var(--muted); }
+  #analysis .cand { display: grid; grid-template-columns: 22px 1fr; gap: 6px; padding: 2px 0; }
+  #evalcard .evhead { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  #evalval { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; min-height: 30px; margin-top: 2px; }
+  #evalnote { font-size: 12px; color: var(--muted); min-height: 16px; }
+  .evbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 6px; background: var(--chessbar); }
+  .evbar div { background: var(--shogibar); transition: width .3s; }
+  .evbar.none div { width: 50%; opacity: .25; }
+  .evlegend { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .graphcol { width: 360px; max-width: 100%; display: flex; flex-direction: column; gap: 12px; }
+  #graph { width: 100%; height: auto; display: block; touch-action: none; }
+  #graph .zero { stroke: #b9a888; stroke-width: 1; }
+  #graph .grid { stroke: #e6dccb; stroke-width: 1; }
+  #graph .lbl { font-size: 10px; fill: var(--muted); }
+  #graph .ln { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+  #graph .pt { fill: var(--accent); }
+  #graph .cur { stroke: var(--promo); stroke-width: 1; stroke-dasharray: 3 3; }
+  #graph .hov { stroke: var(--muted); stroke-width: 1; }
+  #graphhint { min-height: 16px; font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+  #editcard { border-color: var(--accent); }
+  .edrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+  .edrow .lab { font-size: 12px; color: var(--muted); min-width: 64px; }
+  .palette { display: grid; grid-template-columns: repeat(7, 40px); gap: 3px; margin-top: 6px; }
+  .palette .pp { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+    border-radius: 4px; border: 1px solid #dccfb8; background: var(--wood); --cell: 40px; }
+  .palette .pp.sel { outline: 3px solid var(--accent); }
+  .palette .pp.erase { font-size: 12px; background: #fff; }
+  .hands-ed { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 8px; margin-top: 4px; font-size: 13px; }
+  .hands-ed .hc { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .hands-ed .hc span { flex: 1; text-align: center; }
+  .hands-ed button { padding: 0 6px; font-size: 12px; }
+  .seg button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #editerr { color: var(--promo); font-size: 12px; min-height: 16px; margin-top: 6px; white-space: pre-wrap; }
+  #moves { font-size: 13px; max-height: 260px; overflow-y: auto; display: grid; grid-template-columns: 36px 1fr 1fr; gap: 2px 6px; }
+  #moves .n { color: var(--muted); text-align: right; }
+  #moves .mv { cursor: pointer; border-radius: 3px; padding: 0 3px; }
+  #moves .mv:hover { background: #efe5d2; }
+  #moves .mv.cur { background: var(--accent); color: #fff; }
+  #moves .mv .q { color: var(--promo); font-weight: 700; margin-left: 2px; }
+  #moves .mv.cur .q { color: #ffd7d2; }
+  .navrow { display: flex; gap: 4px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+  .navrow button { padding: 2px 8px; font-size: 13px; }
+  .navrow .lab { font-size: 12px; color: var(--muted); margin-left: 4px; }
+  #reviewbar { display: none; font-size: 12px; color: #fff; background: var(--accent); border-radius: 4px; padding: 3px 8px;
+    margin-top: 4px; }
+  #reviewbar.on { display: block; }
+  #analysis .real { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  #analysis .cand.played { font-weight: 700; }
+  .dialog { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; }
+  .dialog.on { display: flex; }
+  .dialog .box { background: var(--panel); padding: 16px; border-radius: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  @media (max-width: 640px) {
+    #board, .boardwrap { --cell: calc((100vw - 64px) / 9); }
+    main { padding: 0 8px 24px; }
+  }
+</style>
+</head>
+<body>
+<header><h1>将棋対チェス AI</h1><span>先手＝将棋／後手＝チェス・ルールは将棋ったー準拠</span><span id="subtitle"></span></header>
+<main>
+  <div class="boardwrap">
+    <div class="hand" id="handTop"></div>
+    <div class="files" id="files"></div>
+    <div class="boardrow"><div id="board"></div><div class="ranks" id="ranks"></div></div>
+    <div class="hand" id="handBottom"></div>
+  </div>
+  <aside>
+    <div class="card hidden" id="editcard">
+      <h2>盤面編集</h2>
+      <div class="edrow seg"><span class="lab">置く駒の持ち主</span>
+        <button id="edown0">☗先手（将棋）</button><button id="edown1">☖後手（チェス）</button></div>
+      <div class="palette" id="palette"></div>
+      <div class="hint">駒を選んでマスをクリックで置く（同じ駒をもう一度クリックで消す）。消しゴムで消す。</div>
+      <div class="edrow"><span class="lab">☗先手の持ち駒</span></div><div class="hands-ed" id="edhand0"></div>
+      <div class="edrow"><span class="lab">☖後手の持ち駒</span></div><div class="hands-ed" id="edhand1"></div>
+      <div class="edrow seg"><span class="lab">手番</span>
+        <button id="edside0">☗先手（将棋）</button><button id="edside1">☖後手（チェス）</button></div>
+      <div class="row">
+        <button class="primary" id="edapply">この局面から対局</button>
+        <button id="edinit">初期配置</button>
+        <button id="edclear">全部消す</button>
+        <button id="edcancel">やめる</button>
+      </div>
+      <div id="editerr"></div>
+    </div>
+    <div class="card" id="evalcard">
+      <div class="evhead"><span>評価値</span><span id="evalply"></span></div>
+      <div id="evalval"></div>
+      <div id="evalnote"></div>
+      <div class="evbar" id="evalbar"><div id="evalbarfill"></div></div>
+      <div class="evlegend"><span>☗将棋</span><span>☖チェス</span></div>
+    </div>
+    <div class="card">
+      <div id="status"></div>
+      <div id="reviewbar"></div>
+      <div id="timer"><div class="t" id="timertext"></div><div class="bar"><div id="timerbar"></div></div></div>
+      <div id="info"></div>
+      <button class="small" id="evaltoggle"></button>
+      <button class="small" id="fliptoggle">盤面を反転</button>
+    </div>
+    <div class="card">
+      <h2>対局設定</h2>
+      <div id="enginebox" class="hidden">
+        <label for="engine">相手（AI）</label>
+        <select id="engine"></select>
+      </div>
+      <label for="think">AIの思考時間（1手あたり、0.1〜10秒）</label>
+      <div><input type="number" id="think" min="0.1" max="10" step="0.1" value="2"><span class="unit">秒</span></div>
+      <label for="mode">あなたの手番</label>
+      <select id="mode">
+        <option value="0">先手（将棋）で指す</option>
+        <option value="1">後手（チェス）で指す</option>
+        <option value="watch">AI同士を観戦</option>
+        <option value="human">人間同士（AIなし）</option>
+      </select>
+      <div class="row">
+        <button class="primary" id="newgame">新しく対局</button>
+        <button id="undo">待った</button>
+        <button id="aimove">AIに1手指させる</button>
+        <button id="editbtn">盤面編集</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>棋譜</h2>
+      <div class="navrow">
+        <button id="navfirst" title="開始局面">⏮</button><button id="navprev" title="1手戻る（←）">◀</button>
+        <button id="navnext" title="1手進む（→）">▶</button><button id="navlast" title="最新の局面（対局に戻る）">⏭</button>
+        <span class="lab" id="navlab"></span>
+      </div>
+      <div id="moves"></div>
+      <div class="hint">手をクリック、グラフをクリック、←→キーでその局面を見返せます。？は評価値が大きく下がった手。</div>
+    </div>
+  </aside>
+  <section class="graphcol">
+    <div class="card" id="graphcard">
+      <h2>評価値の推移</h2>
+      <svg id="graph" viewBox="0 0 340 220"></svg>
+      <div class="hint" id="graphhint"></div>
+    </div>
+    <div class="card" id="anacard">
+      <h2>検討</h2>
+      <button class="small" id="anabtn">検討を開始</button>
+      <div id="analysis"></div>
+    </div>
+  </section>
+</main>
+<div class="dialog" id="promo"><div class="box" id="promobox"></div></div>
+<script>
+const SHOGI = {FU:'歩',KY:'香',KE:'桂',GI:'銀',KI:'金',KA:'角',HI:'飛',OU:'玉',TO:'と',NY:'杏',NK:'圭',NG:'全',UM:'馬',RY:'龍'};
+const CHESS = {CP:['♙','♟'],CN:['♘','♞'],CB:['♗','♝'],CR:['♖','♜'],CQ:['♕','♛'],CK:['♔','♚'],
+               PQ:['♕','♛'],PR:['♖','♜'],PB:['♗','♝'],PN:['♘','♞']};
+const JP = {FU:'歩',KY:'香',KE:'桂',GI:'銀',KI:'金',KA:'角',HI:'飛',OU:'玉',TO:'と',NY:'成香',NK:'成桂',NG:'成銀',UM:'馬',RY:'龍',
+            CP:'ポーン',CN:'ナイト',CB:'ビショップ',CR:'ルーク',CQ:'クイーン',CK:'キング',PQ:'クイーン',PR:'ルーク',PB:'ビショップ',PN:'ナイト'};
+const PROMOTED = new Set(['TO','NY','NK','NG','UM','RY','PQ','PR','PB','PN']);
+const KAN = '一二三四五六七八九';
+let S = null, sel = null, busy = false;
+// show the evaluation score (remembered per browser)
+let showEval = true;
+try { showEval = localStorage.getItem('showEval') !== '0'; } catch (e) {}
+// one server-side game per browser tab (survives reloads of the same tab)
+let GID = null;
+try { GID = sessionStorage.getItem('gid'); } catch (e) {}
+if (!GID) {
+  GID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  try { sessionStorage.setItem('gid', GID); } catch (e) {}
+}
+
+// the board is shown from the chess side when the player plays chess; the flip button turns it around on top of that
+// (display only, remembered per browser)
+let userFlip = false;
+try { userFlip = localStorage.getItem('userFlip') === '1'; } catch (e) {}
+function flipped() { return !!S && ((S.ai_sides.length === 1 && S.ai_sides[0] === 0) !== userFlip); }
+
+function pieceEl(t, o) {
+  const d = document.createElement('div');
+  if (SHOGI[t]) {
+    d.className = 'pc shogi o' + o + ((o === 1) !== flipped() ? ' away' : '') + (PROMOTED.has(t) ? ' promo' : '');
+    d.textContent = SHOGI[t];
+  }
+  else { d.className = 'pc chess o' + o + (PROMOTED.has(t) ? ' promo' : ''); d.textContent = CHESS[t][o]; }
+  return d;
+}
+// GitHub Pages build (tools/build_site.sh sets this to true): no server, the engine runs in this browser (worker.js)
+const LOCAL_ENGINE = true;
+let worker = null, workerSeq = 0;
+const workerWait = new Map();
+function workerCall(path, body) {
+  if (!worker) {
+    worker = new Worker('worker.js');
+    worker.onmessage = ev => { const w = workerWait.get(ev.data.id); workerWait.delete(ev.data.id); w(ev.data.result); };
+  }
+  const id = ++workerSeq;
+  return new Promise(res => { workerWait.set(id, res); worker.postMessage({id, path, body}); });
+}
+// the game is kept in this browser, so a reload goes on with it
+function saveLocalGame() {
+  if (!S) return;
+  try { localStorage.setItem('localGame', JSON.stringify({start: S.start, history: S.history, ai_sides: S.ai_sides,
+                                                           think_ms: S.think_ms})); } catch (e) {}
+}
+async function api(path, body) {
+  if (LOCAL_ENGINE) {
+    const j = await workerCall(path, body);
+    if (j.error) {
+      if (!j.edit) {
+        if (j.state) { S = j.state; sel = null; render(); }
+        document.getElementById('info').textContent = 'エラー: ' + j.error;
+      }
+      throw new Error(j.error);
+    }
+    if (j.board && j.view_ply === null) setTimeout(saveLocalGame, 0);  // after the caller has stored it in S
+    return j;
+  }
+  const opts = body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                          body: JSON.stringify({...body, gid: GID})};
+  const url = body === undefined && path === '/api/state' ? path + '?gid=' + encodeURIComponent(GID) : path;
+  const r = await fetch(url, opts);
+  const j = await r.json();
+  if (j.error) {
+    // screen and server disagree (e.g. server restarted): resync to the server's position
+    if (path !== '/api/state' && !j.edit) {
+      try { S = j.state || await api('/api/state'); sel = null; render(); } catch (e) {}
+    }
+    if (!j.edit) document.getElementById('info').textContent = 'エラー: ' + j.error + '（盤面をサーバーと同期しました）';
+    throw new Error(j.error);
+  }
+  return j;
+}
+function isHumanTurn() { return S && viewPly === null && S.status === 0 && !S.ai_sides.includes(S.side); }
+
+// ---------------- review ----------------
+// viewPly: the move number being looked back at (null = the live position); V: the server's state for it
+let viewPly = null, V = null, viewReq = 0;
+function curPly() { return viewPly === null ? S.history.length : viewPly; }
+function shown() { return viewPly === null || !V ? S : V; }
+function focusKey() { return evalKeyAt(curPly()); }
+async function gotoPly(ply) {
+  if (!S || editing) return;
+  ply = Math.max(0, Math.min(S.history.length, ply));
+  sel = null;
+  if (ply === S.history.length) { viewPly = null; V = null; render(); return; }
+  const req = ++viewReq;
+  const v = await api('/api/view', {ply});
+  if (req !== viewReq) return;  // a newer request is on its way
+  viewPly = ply; V = v;
+  render();
+}
+// questionable moves: the mover's evaluation drops by this much (shogi-style score) from before to after the move
+const Q_DROP = 600, QQ_DROP = 1200;
+function moveMark(i) {  // i: 1-based move number
+  const a = valueAt(i - 1), b = valueAt(i);
+  if (a === undefined || a === null || b === undefined || b === null) return '';
+  const side0 = ((S.side + S.history.length) % 2);  // side to move at the start
+  const mover = (side0 + i - 1) % 2;
+  const drop = (mover === 0 ? 1 : -1) * (valueToEval(a) - valueToEval(b));
+  return drop >= QQ_DROP ? '??' : drop >= Q_DROP ? '?' : '';
+}
+
+// network value (expected score in [-1, 1]) -> win rate -> shogi-style score (600 * logit, as NN shogi engines do)
+function valueToEval(v) {
+  if (Math.abs(v) >= 1) return v > 0 ? MATE : -MATE;  // the server sends exactly +-1 only for a forced mate
+  const p = Math.min(1 - 1e-4, Math.max(1e-4, (v + 1) / 2));
+  return 600 * Math.log(p / (1 - p));
+}
+const MATE = 29000;  // alpha-beta mate scores are above this
+function fmtEval(e) {
+  const S0 = '将棋', S1 = 'チェス';
+  if (Math.abs(e) >= MATE) return `詰み（${e > 0 ? S0 : S1}勝ち）`;
+  const a = Math.abs(e), who = e > 0 ? S0 : S1;
+  const word = a < 300 ? '互角' : a < 800 ? who + 'やや有利' : a < 1500 ? who + '有利' : a < 2500 ? who + '優勢' : who + '勝勢';
+  return `${e >= 0 ? '+' : '−'}${Math.round(a)}（${word}）`;
+}
+
+// evaluation line + analysis panel only: called often while analysing, so it must not rebuild the board
+// (a click on a square that is replaced between mouse down and up is lost)
+// choice of AI: offered by the server only on this PC (localhost)
+function renderEngine() {
+  const box = document.getElementById('enginebox'), sel_ = document.getElementById('engine');
+  box.classList.toggle('hidden', !S.engines);
+  if (!S.engines) return;
+  if (!sel_.options.length)
+    for (const e of S.engines) { const o = document.createElement('option'); o.value = e.id; sel_.appendChild(o); }
+  S.engines.forEach((e, i) => { if (sel_.options[i]) sel_.options[i].textContent = e.label; });  // ratings change
+  if (document.activeElement !== sel_) sel_.value = S.engine;
+}
+function renderInfo() {
+  renderEngine();
+  document.getElementById('evaltoggle').textContent = showEval ? '評価値を隠す' : '評価値を表示';
+  // the evaluation card and the graph follow the same show/hide setting
+  document.getElementById('evalcard').classList.toggle('hidden', !showEval);
+  document.getElementById('graphcard').classList.toggle('hidden', !showEval);
+  document.getElementById('anacard').classList.toggle('hidden', !showEval);
+  // nothing is computed on the AI's turn: the server is the AI's alone, so it keeps to its thinking time
+  const aiTurn = S.status === 0 && S.ai_sides.includes(S.side);
+  if (showEval) { renderEvalCard(aiTurn); renderGraph(); }
+  if (showEval && !busy && (!aiTurn || viewPly !== null) && !editing) requestEval();
+  renderAnalysis();
+}
+
+// evaluation card: the newest position that has a value, so it stays on screen while the AI is thinking
+function renderEvalCard(aiTurn) {
+  const n = S.history.length;
+  if (viewPly !== null) {  // reviewing: the value of that position or nothing yet
+    const v = valueAt(viewPly), has = v !== undefined && v !== null;
+    document.getElementById('evalply').textContent = viewPly === 0 ? '開始局面' : `${viewPly}手目の局面`;
+    document.getElementById('evalval').textContent = has ? fmtEval(valueToEval(v)) : '—';
+    const bar = document.getElementById('evalbar'), fill = document.getElementById('evalbarfill');
+    bar.classList.toggle('none', !has); fill.style.width = has ? ((v + 1) / 2 * 100).toFixed(1) + '%' : '';
+    document.getElementById('evalnote').textContent = has || (ana && ana.key === focusKey()) ? '' : '計算中…';
+    return;
+  }
+  let k = n;
+  while (k >= 0 && (valueAt(k) === undefined || valueAt(k) === null)) k--;
+  const val = document.getElementById('evalval'), note = document.getElementById('evalnote');
+  const bar = document.getElementById('evalbar'), fill = document.getElementById('evalbarfill');
+  document.getElementById('evalply').textContent = k >= 0 ? (k === 0 ? '開始局面' : `${k}手目の局面`) : '';
+  if (k < 0) {
+    val.textContent = '—';
+    bar.classList.add('none'); fill.style.width = '';
+  } else {
+    const v = valueAt(k);
+    val.textContent = fmtEval(valueToEval(v));
+    bar.classList.remove('none'); fill.style.width = ((v + 1) / 2 * 100).toFixed(1) + '%';
+  }
+  note.textContent = k === n || aiTurn || busy ? '' : S.status === 0 ? '最新の局面を計算中…' : '';
+}
+
+// evaluation graph: one point per position, clipped to ±3000, from 先手's side
+const GRAPH_CLIP = 3000;
+let graphHover = null;  // ply under the pointer
+function renderGraph() {
+  const svg = document.getElementById('graph');
+  const W = 340, H = 220, L = 34, R = 8, T = 10, B = 22;
+  const n = S.history.length, xmax = Math.max(20, n);
+  const x = i => L + (W - L - R) * i / xmax;
+  const y = e => T + (H - T - B) * (1 - (Math.max(-GRAPH_CLIP, Math.min(GRAPH_CLIP, e)) + GRAPH_CLIP) / (2 * GRAPH_CLIP));
+  let h = '';
+  for (const e of [-2000, -1000, 1000, 2000]) h += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(e)}" y2="${y(e)}"/>`;
+  h += `<line class="zero" x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}"/>`;
+  h += `<text class="lbl" x="${L - 4}" y="${y(GRAPH_CLIP) + 4}" text-anchor="end">+3000</text>`;
+  h += `<text class="lbl" x="${L - 4}" y="${y(0) + 3}" text-anchor="end">0</text>`;
+  h += `<text class="lbl" x="${L - 4}" y="${y(-GRAPH_CLIP)}" text-anchor="end">−3000</text>`;
+  h += `<text class="lbl" x="${L + 4}" y="${T + 10}">将棋有利</text>`;
+  h += `<text class="lbl" x="${L + 4}" y="${H - B - 4}">チェス有利</text>`;
+  const step = xmax <= 40 ? 10 : xmax <= 100 ? 20 : 50;
+  for (let i = 0; i <= xmax; i += step) h += `<text class="lbl" x="${x(i)}" y="${H - 6}" text-anchor="middle">${i}</text>`;
+  h += `<line class="cur" x1="${x(curPly())}" x2="${x(curPly())}" y1="${T}" y2="${H - B}"/>`;
+  // the line breaks where a position has no value yet
+  let seg = [], pts = '';
+  const flush = () => { if (seg.length > 1) h += `<polyline class="ln" points="${seg.join(' ')}"/>`; seg = []; };
+  for (let i = 0; i <= n; i++) {
+    const v = valueAt(i);
+    if (v === undefined || v === null) { flush(); continue; }
+    const px = x(i).toFixed(1), py = y(valueToEval(v)).toFixed(1);
+    seg.push(px + ',' + py);
+    pts += `<circle class="pt" cx="${px}" cy="${py}" r="${i === curPly() ? 3.5 : 2}"/>`;
+  }
+  flush();
+  if (graphHover !== null && graphHover <= n) h += `<line class="hov" x1="${x(graphHover)}" x2="${x(graphHover)}" y1="${T}" y2="${H - B}"/>`;
+  svg.innerHTML = h + pts;
+  const hint = document.getElementById('graphhint');
+  const hp = graphHover !== null && graphHover <= n ? graphHover : null;
+  if (hp === null) hint.textContent = n ? 'グラフにカーソルを合わせると評価値、クリックでその局面へ' : '';
+  else {
+    const v = valueAt(hp);
+    hint.textContent = `${hp === 0 ? '開始局面' : hp + '手目'}: ` + (v === undefined || v === null ? '未計算' : fmtEval(valueToEval(v)));
+  }
+}
+function graphPly(ev) {
+  const svg = document.getElementById('graph'), r = svg.getBoundingClientRect();
+  const W = 340, L = 34, R = 8, n = S.history.length, xmax = Math.max(20, n);
+  const px = (ev.clientX - r.left) / r.width * W;
+  return Math.max(0, Math.min(n, Math.round((px - L) / (W - L - R) * xmax)));
+}
+
+function render() {
+  const b = document.getElementById('board');
+  b.innerHTML = '';
+  const dests = new Map();
+  if (sel && isHumanTurn()) {
+    for (const m of S.legal) {
+      if ((sel.from !== undefined && m.from === sel.from) || (sel.drop && m.drop === sel.drop)) dests.set(m.to, true);
+    }
+  }
+  let kingSq = -1;
+  if (S && viewPly !== null && viewPly > S.history.length) { viewPly = null; V = null; }  // the game was undone
+  const D = shown();
+  if (D.check && !editing) D.board.forEach((c, i) => { if (c && c.o === D.side && (c.t === 'OU' || c.t === 'CK')) kingSq = i; });
+  const BOARD = editing ? ED.board : D.board, HANDS = editing ? ED.hands : D.hands;
+  const flip = flipped();
+  document.getElementById('files').innerHTML = (flip ? [1,2,3,4,5,6,7,8,9] : [9,8,7,6,5,4,3,2,1])
+    .map(n => `<div>${n}</div>`).join('');
+  document.getElementById('ranks').innerHTML = (flip ? [...KAN].reverse() : [...KAN]).map(k => `<div>${k}</div>`).join('');
+  for (let i = 0; i < 81; i++) {
+    const sq = flip ? 80 - i : i;
+    const d = document.createElement('div');
+    d.className = 'sq';
+    if (!editing && D.last && (D.last.from === sq || D.last.to === sq)) d.classList.add('last');
+    if (sel && sel.from === sq) d.classList.add('sel');
+    if (sq === kingSq) d.classList.add('check');
+    if (dests.has(sq)) { d.classList.add('dest'); if (S.board[sq]) d.classList.add('cap'); }
+    const c = BOARD[sq];
+    if (c) d.appendChild(pieceEl(c.t, c.o));
+    d.onclick = () => editing ? editSq(sq) : clickSq(sq);
+    d.oncontextmenu = ev => { if (editing) { ev.preventDefault(); ED.board[sq] = null; render(); } };
+    b.appendChild(d);
+  }
+  for (const [s, id] of [[flip ? 0 : 1, 'handTop'], [flip ? 1 : 0, 'handBottom']]) {
+    const h = document.getElementById(id);
+    h.innerHTML = '';
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = (s === 0 ? '☗先手（将棋）' : '☖後手（チェス）') + (S.ai_sides.includes(s) ? ' AI' : '') + ' 持ち駒';
+    h.appendChild(who);
+    for (const [t, n] of Object.entries(HANDS[s]).filter(([, n]) => n > 0)) {
+      const e = document.createElement('div');
+      e.className = 'hp' + (sel && sel.drop === t && S.side === s ? ' sel' : '');
+      e.appendChild(pieceEl(t, s));
+      if (n > 1) { const c = document.createElement('span'); c.className = 'cnt'; c.textContent = n; e.appendChild(c); }
+      e.onclick = () => { if (!editing && S.side === s && isHumanTurn()) { sel = (sel && sel.drop === t) ? null : {drop: t}; render(); } };
+      h.appendChild(e);
+    }
+  }
+  renderEditor();
+  // status
+  const st = document.getElementById('status');
+  const sideName = S.side === 0 ? '☗先手（将棋）' : '☖後手（チェス）';
+  if (S.status === 0) st.textContent = `${S.ply + 1}手目 ${sideName}の番` + (S.check ? '（王手）' : '');
+  else if (S.status === 3) st.textContent = `引き分け（${S.reason}）`;
+  else st.textContent = `${S.status === 1 ? '☗先手（将棋）' : '☖後手（チェス）'}の勝ち（${S.reason}）`;
+  const rb = document.getElementById('reviewbar');
+  rb.classList.toggle('on', viewPly !== null);
+  rb.textContent = viewPly === null ? '' :
+    `棋譜を見返し中：${viewPly === 0 ? '開始局面' : viewPly + '手目'}（${D.side === 0 ? '☗' : '☖'}の番）　⏭で対局に戻る`;
+  document.getElementById('navlab').textContent = `${curPly()} / ${S.history.length}手`;
+  renderInfo();
+  renderMoves();
+}
+
+// kifu with the questionable-move marks: rebuilt on render, when evaluations arrive and when they are shown or hidden
+// (not from the analysis loop, which runs many times a second)
+function renderMoves() {
+  const mv = document.getElementById('moves');
+  mv.innerHTML = '';
+  const labels = S.history.map((h, i) => (S.labels && S.labels[i]) || h);  // Japanese notation from the server
+  const cell = i => {  // move i (0-based): click shows the position after it
+    const d = document.createElement('div');
+    if (i >= labels.length) return d;
+    d.className = 'mv' + (curPly() === i + 1 ? ' cur' : '');
+    d.textContent = labels[i];
+    const q = showEval ? moveMark(i + 1) : '';
+    if (q) { const e = document.createElement('span'); e.className = 'q'; e.textContent = q; d.appendChild(e); }
+    d.onclick = () => gotoPly(i + 1);
+    return d;
+  };
+  for (let i = 0; i < labels.length; i += 2) {
+    const n = document.createElement('div'); n.className = 'n'; n.textContent = (i / 2 + 1) + '.';
+    mv.append(n, cell(i), cell(i + 1));
+  }
+  const cur = mv.querySelector('.mv.cur');
+  if (viewPly === null) mv.scrollTop = mv.scrollHeight;
+  else if (cur) cur.scrollIntoView({block: 'nearest'});
+}
+
+// ---------------- board editor ----------------
+// ED: the position being edited (board 81 x {t, o} | null, index y*9+x with y=0 the far rank 一, hands, side to move)
+let editing = false, ED = null, edTool = 'FU', edOwner = 0;
+const ED_TYPES = ['FU','KY','KE','GI','KI','KA','HI','OU','TO','NY','NK','NG','UM','RY',
+                  'CP','CN','CB','CR','CQ','CK','PQ','PR','PB','PN'];
+const HAND_TYPES = ['FU','KY','KE','GI','KI','KA','HI','CP','CN','CB','CR','CQ'];
+function initialBoard() {
+  const b = Array(81).fill(null);
+  ['CR','CN','CB','CQ','CK','CB','CN','CR'].forEach((t, x) => { b[x] = {t, o: 1}; b[9 + x] = {t: 'CP', o: 1}; });
+  ['KY','KE','GI','KI','OU','KI','GI','KE','KY'].forEach((t, x) => { b[72 + x] = {t, o: 0}; b[54 + x] = {t: 'FU', o: 0}; });
+  b[64] = {t: 'KA', o: 0}; b[70] = {t: 'HI', o: 0};
+  return b;
+}
+function startEdit() {
+  if (busy) return;
+  viewPly = null; V = null;
+  analyzing = false;
+  editing = true; sel = null;
+  ED = {board: S.board.map(c => c ? {t: c.t, o: c.o} : null), hands: [{...S.hands[0]}, {...S.hands[1]}], side: S.side};
+  document.getElementById('editerr').textContent = '';
+  render();
+}
+function stopEdit() { editing = false; ED = null; render(); loop(); }
+function editSq(sq) {
+  const c = ED.board[sq];
+  if (edTool === 'erase' || (c && c.t === edTool && c.o === edOwner)) ED.board[sq] = null;
+  else {
+    // there is only one king of each kind: placing one moves it
+    if (edTool === 'OU' || edTool === 'CK') ED.board.forEach((x, i) => { if (x && x.t === edTool) ED.board[i] = null; });
+    ED.board[sq] = {t: edTool, o: edTool === 'OU' ? 0 : edTool === 'CK' ? 1 : edOwner};
+  }
+  render();
+}
+function renderEditor() {
+  document.getElementById('editcard').classList.toggle('hidden', !editing);
+  document.getElementById('editbtn').classList.toggle('hidden', editing);
+  if (!editing) return;
+  for (const o of [0, 1]) {
+    document.getElementById('edown' + o).classList.toggle('on', edOwner === o);
+    document.getElementById('edside' + o).classList.toggle('on', ED.side === o);
+  }
+  const pal = document.getElementById('palette');
+  pal.innerHTML = '';
+  for (const t of [...ED_TYPES, 'erase']) {
+    const b = document.createElement('div');
+    b.className = 'pp' + (edTool === t ? ' sel' : '') + (t === 'erase' ? ' erase' : '');
+    if (t === 'erase') b.textContent = '消しゴム';
+    else b.appendChild(pieceEl(t, t === 'OU' ? 0 : t === 'CK' ? 1 : edOwner));
+    b.title = t === 'erase' ? '消しゴム' : JP[t];
+    b.onclick = () => { edTool = t; render(); };
+    pal.appendChild(b);
+  }
+  for (const o of [0, 1]) {
+    const box = document.getElementById('edhand' + o);
+    box.innerHTML = '';
+    for (const t of HAND_TYPES) {
+      const n = ED.hands[o][t] || 0;
+      const d = document.createElement('div'); d.className = 'hc';
+      const minus = document.createElement('button'); minus.textContent = '−';
+      minus.onclick = () => { ED.hands[o][t] = Math.max(0, n - 1); render(); };
+      const plus = document.createElement('button'); plus.textContent = '+';
+      plus.onclick = () => { ED.hands[o][t] = Math.min(18, n + 1); render(); };
+      const lab = document.createElement('span'); lab.textContent = `${JP[t]} ${n}`;
+      d.append(minus, lab, plus);
+      box.appendChild(d);
+    }
+  }
+}
+document.getElementById('editbtn').onclick = startEdit;
+document.getElementById('edcancel').onclick = stopEdit;
+for (const o of [0, 1]) {
+  document.getElementById('edown' + o).onclick = () => { edOwner = o; render(); };
+  document.getElementById('edside' + o).onclick = () => { ED.side = o; render(); };
+}
+document.getElementById('edinit').onclick = () => { ED.board = initialBoard(); ED.hands = [{}, {}]; ED.side = 0; render(); };
+document.getElementById('edclear').onclick = () => { ED.board = Array(81).fill(null); ED.hands = [{}, {}]; render(); };
+document.getElementById('edapply').onclick = async () => {
+  try {
+    S = await api('/api/setpos', {board: ED.board, hands: ED.hands, side: ED.side});
+  } catch (e) {
+    document.getElementById('editerr').textContent = e.message;
+    return;
+  }
+  ana = null;
+  stopEdit();
+};
+
+function clickSq(sq) {
+  if (!isHumanTurn() || busy) return;
+  if (sel) {
+    const cands = S.legal.filter(m => m.to === sq && ((sel.from !== undefined && m.from === sel.from) || (sel.drop && m.drop === sel.drop)));
+    if (cands.length === 1) return play(cands[0]);
+    if (cands.length > 1) return choosePromo(cands);
+  }
+  const c = S.board[sq];
+  if (c && c.o === S.side && S.legal.some(m => m.from === sq)) sel = (sel && sel.from === sq) ? null : {from: sq};
+  else sel = null;
+  render();
+}
+
+function choosePromo(cands) {
+  const dlg = document.getElementById('promo'), box = document.getElementById('promobox');
+  box.innerHTML = '';
+  for (const m of cands) {
+    const b = document.createElement('button');
+    b.textContent = m.promo ? (SHOGI[m.promo] ? '成る（' + SHOGI[m.promo] + '）' : JP[m.promo] + 'に成る') : '成らない';
+    b.onclick = () => { dlg.classList.remove('on'); play(m); };
+    box.appendChild(b);
+  }
+  const x = document.createElement('button'); x.textContent = 'やめる';
+  x.onclick = () => { dlg.classList.remove('on'); sel = null; render(); };
+  box.appendChild(x);
+  dlg.classList.add('on');
+}
+
+async function play(m) {
+  sel = null;
+  moving = true;  // no analysis request while the move is on its way
+  try { S = await api('/api/move', {move: m.s}); } finally { moving = false; }
+  render();
+  loop();
+}
+
+let timerId = null;
+function startTimer() {
+  const box = document.getElementById('timer'), txt = document.getElementById('timertext');
+  const bar = document.getElementById('timerbar');
+  const t0 = performance.now(), limit = S.think_ms;
+  const tick = () => {
+    const el = performance.now() - t0;
+    txt.textContent = `残り ${(Math.max(0, limit - el) / 1000).toFixed(1)} 秒`;
+    bar.style.width = Math.min(100, el / limit * 100) + '%';
+  };
+  tick();
+  box.classList.add('on');
+  timerId = setInterval(tick, 100);
+}
+function stopTimer() {
+  clearInterval(timerId); timerId = null;
+  document.getElementById('timer').classList.remove('on');
+}
+
+// evaluation of each position, keyed by the evaluating model (the best network, or the NNUE when it is the AI) + moves
+const evals = new Map();
+// evaluations are remembered in the browser (newest EVAL_STORE_MAX), so a reload does not compute them again
+const EVAL_STORE = 'evalCache', EVAL_STORE_MAX = 5000;
+try { for (const [k, v] of JSON.parse(localStorage.getItem(EVAL_STORE) || '[]')) evals.set(k, v); } catch (e) {}
+let evalSaveTimer = null;
+function setEval(key, v) {
+  evals.delete(key);  // re-insert: the Map's order is the age order used for trimming
+  evals.set(key, v);
+  if (v === null || v === undefined || evalSaveTimer) return;
+  evalSaveTimer = setTimeout(() => {
+    evalSaveTimer = null;
+    const keep = [...evals].filter(([, x]) => x !== null && x !== undefined).slice(-EVAL_STORE_MAX);
+    try { localStorage.setItem(EVAL_STORE, JSON.stringify(keep)); } catch (e) {}
+  }, 500);
+}
+let evalPending = null;
+function evalKeyAt(ply) { return (S.eval_model || (S.model ? S.model.name : '')) + '|' + (S.start ? S.start + '#' : '') + S.history.slice(0, ply).join(','); }
+function evalKey() { return evalKeyAt(S.history.length); }
+// value of the position after `ply` moves: the analysis when it is on that position, else the quick evaluation
+function valueAt(ply) {
+  const key = evalKeyAt(ply);
+  return ana && ana.key === key ? ana.value : evals.get(key);
+}
+// the current position first, then the newest earlier one without a value (skipped while the AI was thinking)
+function requestEval() {
+  if (evalPending) return;
+  let ply = S.history.length;
+  if (viewPly !== null && !evals.has(evalKeyAt(viewPly))) ply = viewPly;  // the position being looked at first
+  else while (ply >= 0 && evals.has(evalKeyAt(ply))) ply--;
+  if (ply < 0) return;
+  const key = evalKeyAt(ply);
+  evalPending = api('/api/eval', {ply}).then(r => { setEval(key, r.value); })
+    .catch(() => { setEval(key, null); })
+    .finally(() => { evalPending = null; if (S) { renderInfo(); renderMoves(); } });
+}
+
+// evaluation of the position the AI is thinking about: its own running search (network AI) or a quick evaluation the
+// server runs alongside (the others); read without the server's lock, so it arrives while /api/ai is still running
+let thinking = null;
+async function pollThinking(ply, key) {
+  if (LOCAL_ENGINE) return;  // the worker is busy with the move itself
+  try {
+    const r = await (await fetch('/api/thinking?gid=' + encodeURIComponent(GID))).json();
+    if (!busy || r.ply !== ply || r.value === null || r.value === undefined) return;
+    thinking = r;
+    setEval(key, r.value);
+    renderInfo();
+  } catch (e) {}
+}
+
+// ask the server's AI to play the current move; returns false on error
+async function aiStep() {
+  if (evalPending) await evalPending;  // the server handles one request at a time; keep the countdown honest
+  aiWaiting = true;  // keeps the analysis loop from starting another request
+  while (anaInflight) await new Promise(r => setTimeout(r, 30));
+  aiWaiting = false;
+  busy = true; render(); startTimer();
+  const ply = S.history.length, key = evalKey();
+  const poll = setInterval(() => pollThinking(ply, key), 300);
+  try { S = await api('/api/ai', {}); } catch (e) { return false; }
+  finally { clearInterval(poll); thinking = null; busy = false; stopTimer(); }
+  // a network AI's own search is the evaluation of the position it moved from
+  if (S.ai_info && S.ai_info.value_sente !== undefined && S.ai_info.value_sente !== null) setEval(key, S.ai_info.value_sente);
+  render();
+  return true;
+}
+
+async function loop() {
+  if (busy || editing) return;
+  while (S.status === 0 && S.ai_sides.includes(S.side)) {
+    if (!await aiStep()) break;
+    if (S.ai_sides.length === 2) await new Promise(r => setTimeout(r, 300));
+  }
+  busy = false; render();
+}
+
+function aiSides() {
+  const v = document.getElementById('mode').value;
+  return v === '0' ? [1] : v === '1' ? [0] : v === 'watch' ? [0, 1] : [];
+}
+
+document.getElementById('newgame').onclick = async () => {
+  sel = null; editing = false; ED = null; viewPly = null; V = null;
+  const req = {ai_sides: aiSides(), think_ms: thinkMs()};
+  if (S && S.engines) req.engine = document.getElementById('engine').value;
+  S = await api('/api/new', req);
+  render(); loop();
+};
+document.getElementById('undo').onclick = async () => {
+  if (busy || editing) return;
+  const n = S.ai_sides.length === 1 ? (S.ai_sides.includes(S.side) ? 1 : 2) : 1;
+  S = await api('/api/undo', {n}); sel = null; viewPly = null; V = null; render();
+};
+document.getElementById('aimove').onclick = async () => {
+  if (busy || editing || S.status !== 0) return;
+  sel = null;
+  // after the AI plays the player's move, the opponent AI answers right away
+  if (await aiStep()) loop();
+};
+// analysis mode: keep asking the server to search the current position a bit more and show the top 3 moves
+let analyzing = false, anaInflight = false, ana = null, anaLoop = false, aiWaiting = false, moving = false;
+let anaBusy = false;  // the server's analysis tree is in use by another tab
+async function analysisLoop() {
+  if (anaLoop) return;  // one loop at a time (the button can be toggled while a request is in flight)
+  anaLoop = true;
+  while (analyzing) {
+    // pause while the AI is to move (it needs the server) or the tree is full
+    const live = viewPly === null;
+    if (busy || editing || aiWaiting || moving || !S || (live && (S.status !== 0 || S.ai_sides.includes(S.side))) ||
+        (!live && shown().status !== 0) || (ana && ana.done && ana.key === focusKey())) {
+      await new Promise(r => setTimeout(r, 200));
+      continue;
+    }
+    const key = focusKey(), ply = curPly();
+    anaInflight = true;
+    try {
+      const r = await api('/api/analyze', {ply});
+      if (r.error) { analyzing = false; document.getElementById('info').textContent = r.error; }
+      else if (r.busy) { anaBusy = true; await new Promise(res => setTimeout(res, 1000)); }  // another tab is analysing
+      else if (key === focusKey() && !r.final && !r.paused) { anaBusy = false; ana = {...r, key}; }
+    } catch (e) { analyzing = false; }
+    finally { anaInflight = false; }
+    renderInfo();
+  }
+  anaLoop = false;
+  renderInfo();
+}
+function renderAnalysis() {
+  document.getElementById('anabtn').textContent = analyzing ? '検討を停止' : '検討を開始';
+  const box = document.getElementById('analysis');
+  if (!ana || ana.key !== focusKey()) {
+    box.innerHTML = analyzing && shown().status === 0 ?
+      `<div class="head">${anaBusy ? '別のタブが検討中のため待っています…' : '検討中…'}</div>` : '';
+    return;
+  }
+  // the tree keeps growing while the player thinks; it stops only when the PC runs short of memory
+  const stopText = {memory: 'メモリが足りなくなったので停止', limit: '上限に達したので停止'}[ana.stopped];
+  const head = ana.done && stopText ? `<div class="head">${stopText}</div>` : '';
+  // reviewing: the move actually played from this position, and which candidate it was
+  const played = viewPly !== null && viewPly < S.history.length ? S.history[viewPly] : null;
+  const real = played ? `<div class="real">実戦の手：${S.labels[viewPly] || played}` +
+    (ana.cands.some(c => c.move === played) ? '' : '（候補3手の外）') + '</div>' : '';
+  box.innerHTML = head + real + ana.cands.map((c, i) =>
+    `<div class="cand${c.move === played ? ' played' : ''}"><span>${i + 1}.</span><span>${c.label}　` +
+    `${fmtEval(valueToEval(c.value))}${c.move === played ? '　← 実戦' : ''}</span></div>`).join('');
+}
+document.getElementById('anabtn').onclick = () => {
+  analyzing = !analyzing;
+  renderInfo();
+  if (analyzing) analysisLoop();
+};
+document.getElementById('fliptoggle').onclick = () => {
+  userFlip = !userFlip;
+  try { localStorage.setItem('userFlip', userFlip ? '1' : '0'); } catch (e) {}
+  render();
+};
+document.getElementById('evaltoggle').onclick = () => {
+  showEval = !showEval;
+  if (!showEval) analyzing = false;  // the analysis panel is hidden with the evaluation
+  try { localStorage.setItem('showEval', showEval ? '1' : '0'); } catch (e) {}
+  renderInfo();
+  renderMoves();  // the marks in the kifu follow the setting too
+};
+document.getElementById('graph').onpointermove = ev => { graphHover = graphPly(ev); renderGraph(); };
+document.getElementById('graph').onpointerleave = () => { graphHover = null; renderGraph(); };
+document.getElementById('graph').onclick = ev => gotoPly(graphPly(ev));
+document.getElementById('navfirst').onclick = () => gotoPly(0);
+document.getElementById('navprev').onclick = () => gotoPly(curPly() - 1);
+document.getElementById('navnext').onclick = () => gotoPly(curPly() + 1);
+document.getElementById('navlast').onclick = () => gotoPly(S.history.length);
+document.addEventListener('keydown', ev => {
+  if (editing || !S || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (ev.key === 'ArrowLeft') { ev.preventDefault(); gotoPly(curPly() - 1); }
+  else if (ev.key === 'ArrowRight') { ev.preventDefault(); gotoPly(curPly() + 1); }
+});
+function thinkMs() {
+  const el = document.getElementById('think');
+  let v = parseFloat(el.value);
+  if (!isFinite(v)) v = S ? S.think_ms / 1000 : 2;
+  v = Math.min(10, Math.max(0.1, Math.round(v * 10) / 10));
+  el.value = v;
+  return Math.round(v * 1000);
+}
+document.getElementById('engine').onchange = async e => { S = await api('/api/settings', {engine: e.target.value}); render(); };
+document.getElementById('think').onchange = async () => { S = await api('/api/settings', {think_ms: thinkMs()}); render(); };
+document.getElementById('mode').onchange = async () => { S = await api('/api/settings', {ai_sides: aiSides()}); render(); loop(); };
+
+(async () => {
+  if (LOCAL_ENGINE) {
+    document.getElementById('subtitle').textContent = 'AI（NNUE＋αβ探索）はこのブラウザの中で動きます。読み込み中…';
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('localGame') || 'null'); } catch (e) {}
+    S = await api(saved ? '/api/restore' : '/api/state', saved || undefined);
+    document.getElementById('subtitle').textContent =
+      `AI（NNUE ${S.nnue}＋αβ探索）はこのブラウザの中で動きます（1 スレッド、PC の速さで強さが変わります）`;
+  } else S = await api('/api/state');
+  document.getElementById('think').value = String(S.think_ms / 1000);
+  document.getElementById('mode').value = S.ai_sides.length === 2 ? 'watch' : S.ai_sides.length === 0 ? 'human' : String(1 - S.ai_sides[0]);
+  render();
+})();
+</script>
+</body>
+</html>
